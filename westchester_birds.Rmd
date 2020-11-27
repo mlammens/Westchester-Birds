@@ -5,31 +5,40 @@ date: "11/27/2020"
 output: html_document
 ---
 
-```{r}
-# Ebird analysis
+Setup the analysis and read in that data
 
-# read in data
+```{r}
+# Call in packages
 library(dplyr)
 library(readr)
 library(ggplot2)
 library(lubridate)
+library(sp)
+library(raster)
+library(sf)
+```
 
 
+```{r}
+# read in data
 ebd_US_NY_119_relSep_2020 <- read_delim("ebd_US-NY-119_relSep-2020/ebd_US-NY-119_relSep-2020.txt", 
                                         "\t", escape_double = FALSE, trim_ws = TRUE)
-View(ebd_US_NY_119_relSep_2020)
+```
 
-# Look at some of the data and some summaries
-unique(ebd_US_NY_119_relSep_2020$`SCIENTIFIC NAME`)
-unique(ebd_US_NY_119_relSep_2020$`COMMON NAME`)
+## Exploring the bird data
 
+List the birds, by common name, based on most to least sitings
+
+```{r}
 ebd_US_NY_119_relSep_2020 %>%
   group_by(`COMMON NAME`) %>%
   tally() %>% 
   arrange(desc(n))
+```
 
+Let's limit our data to just the past 20 years
 
-## Let's limit our data to just the past 20 years
+```{r}
 # Convert obs data to a data type variable
 ebd_US_NY_119_relSep_2020$`OBSERVATION DATE` = as_date(ebd_US_NY_119_relSep_2020$`OBSERVATION DATE`)
 
@@ -38,55 +47,67 @@ ebd_US_NY_119_relSep_2020$OBSERVATION_YEAR = year(ebd_US_NY_119_relSep_2020$`OBS
 
 # Filter to obs poste 2000
 ebd_recent = filter(ebd_US_NY_119_relSep_2020, OBSERVATION_YEAR >= 2000)
+```
 
+
+Plot a histogram of observation years for the recent data
+
+```{r}
 # Look at histogram of obs years
 ggplot(data = ebd_recent, aes(x = OBSERVATION_YEAR)) + 
   geom_histogram(binwidth = 1)
+```
 
 
+## Spatial associations
+
+```{r}
 ## ---------
 # Get GPS locations for field plots
 field_plots = read.csv(file = "points_smpl.csv")
 
-library(sp)
-library(raster)
-library(sf)
 
 ## Convert ebird data set into spatial points data.frame
 ebd_sppnt_df = SpatialPointsDataFrame(coords = dplyr::select(ebd_recent, LONGITUDE, LATITUDE),
                                       data = ebd_recent)
 crs(ebd_sppnt_df) = '+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs'
 
-## Read in field plot locations
+## Covert field plot locations to spatial points
 field_pnts = SpatialPoints(coords = dplyr::select(field_plots, lon, lat))
 crs(field_pnts) = '+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs'
+```
 
-# # Get Westchester Co Park layer
-# wcp_shp = st_read("wccopark.shp")
-# #plot(wcp_shp)
-# ggplot() +
-#   geom_sf(data = wcp_shp)
+### Read in the Westchester Co. Open Space data layer
 
+Source: [https://gis.westchestergov.com/datasets/open-space](https://gis.westchestergov.com/datasets/open-space)
+
+```{r}
 # Get Westchester openspace layer
-# Source: https://gis.westchestergov.com/datasets/open-space
 wc_openspace = st_read("Open_Space-shp/Open_Space.shp")
-ggplot() +
-  geom_sf(data = wc_openspace)
-crs(wc_openspace)
 
+# Transform layer to WGS 84 format
 wc_openspace_wgs84 <- st_transform(wc_openspace, crs = '+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs')
+
+# Plot the layer
 ggplot() +
   geom_sf(data = wc_openspace_wgs84)
+```
 
-#field_buffer = buffer(field_pnts, width = 1000)
-#plot(field_buffer)
+Overlay the open space layer with the bird observation points, to associated each observation with the open space area it *may* have occurred in. 
+Note that many observations are likely not from open spaces, having occurred on private property, in more developed areas, along roads, etc..
 
+```{r}
+# Match siting lat/lon with open space layer
 ebd_openspace_locs = sp::over(ebd_sppnt_df, as_Spatial(wc_openspace_wgs84))
-
 
 ## Add open space locations with ebd data
 ebd_recent <- cbind(ebd_recent, ebd_openspace_locs)
+ebd_sppnt_df@data <- cbind(ebd_sppnt_df@data, ebd_openspace_locs)
+```
 
+Make a list of the number of sitings for each location identified in the open space layer
+
+```{r}
 sight_counts <-
   ebd_recent %>%
   filter(!is.na(NAME)) %>%
@@ -103,4 +124,11 @@ ggplot(data = sight_counts, aes(x = log(n), y = log(richness))) +
 
 
 ```
+
+```{r}
+ggplot() +
+  geom_sf(data = wc_openspace_wgs84) +
+  geom_point(data = ebd_recent, aes(x = LONGITUDE, y = LATITUDE), alpha = 0.05)
+```
+
 
