@@ -1,0 +1,106 @@
+---
+title: "Westchester Co. NY eBird analysis"
+author: "Matthew E. Aiello-Lammens"
+date: "11/27/2020"
+output: html_document
+---
+
+```{r}
+# Ebird analysis
+
+# read in data
+library(dplyr)
+library(readr)
+library(ggplot2)
+library(lubridate)
+
+
+ebd_US_NY_119_relSep_2020 <- read_delim("ebd_US-NY-119_relSep-2020/ebd_US-NY-119_relSep-2020.txt", 
+                                        "\t", escape_double = FALSE, trim_ws = TRUE)
+View(ebd_US_NY_119_relSep_2020)
+
+# Look at some of the data and some summaries
+unique(ebd_US_NY_119_relSep_2020$`SCIENTIFIC NAME`)
+unique(ebd_US_NY_119_relSep_2020$`COMMON NAME`)
+
+ebd_US_NY_119_relSep_2020 %>%
+  group_by(`COMMON NAME`) %>%
+  tally() %>% 
+  arrange(desc(n))
+
+
+## Let's limit our data to just the past 20 years
+# Convert obs data to a data type variable
+ebd_US_NY_119_relSep_2020$`OBSERVATION DATE` = as_date(ebd_US_NY_119_relSep_2020$`OBSERVATION DATE`)
+
+# Extract obs year
+ebd_US_NY_119_relSep_2020$OBSERVATION_YEAR = year(ebd_US_NY_119_relSep_2020$`OBSERVATION DATE`)
+
+# Filter to obs poste 2000
+ebd_recent = filter(ebd_US_NY_119_relSep_2020, OBSERVATION_YEAR >= 2000)
+
+# Look at histogram of obs years
+ggplot(data = ebd_recent, aes(x = OBSERVATION_YEAR)) + 
+  geom_histogram(binwidth = 1)
+
+
+## ---------
+# Get GPS locations for field plots
+field_plots = read.csv(file = "points_smpl.csv")
+
+library(sp)
+library(raster)
+library(sf)
+
+## Convert ebird data set into spatial points data.frame
+ebd_sppnt_df = SpatialPointsDataFrame(coords = dplyr::select(ebd_recent, LONGITUDE, LATITUDE),
+                                      data = ebd_recent)
+crs(ebd_sppnt_df) = '+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs'
+
+## Read in field plot locations
+field_pnts = SpatialPoints(coords = dplyr::select(field_plots, lon, lat))
+crs(field_pnts) = '+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs'
+
+# # Get Westchester Co Park layer
+# wcp_shp = st_read("wccopark.shp")
+# #plot(wcp_shp)
+# ggplot() +
+#   geom_sf(data = wcp_shp)
+
+# Get Westchester openspace layer
+# Source: https://gis.westchestergov.com/datasets/open-space
+wc_openspace = st_read("Open_Space-shp/Open_Space.shp")
+ggplot() +
+  geom_sf(data = wc_openspace)
+crs(wc_openspace)
+
+wc_openspace_wgs84 <- st_transform(wc_openspace, crs = '+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs')
+ggplot() +
+  geom_sf(data = wc_openspace_wgs84)
+
+#field_buffer = buffer(field_pnts, width = 1000)
+#plot(field_buffer)
+
+ebd_openspace_locs = sp::over(ebd_sppnt_df, as_Spatial(wc_openspace_wgs84))
+
+
+## Add open space locations with ebd data
+ebd_recent <- cbind(ebd_recent, ebd_openspace_locs)
+
+sight_counts <-
+  ebd_recent %>%
+  filter(!is.na(NAME)) %>%
+  group_by(NAME) %>%
+  summarise(n = length(`SCIENTIFIC NAME`),
+            richness = length(unique(`SCIENTIFIC NAME`))) %>% 
+  arrange(desc(n))
+
+## Plot sighting by richness to get an effort count
+ggplot(data = sight_counts, aes(x = log(n), y = log(richness))) +
+  geom_point()
+
+
+
+
+```
+
