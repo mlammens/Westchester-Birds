@@ -2,7 +2,9 @@
 title: "Westchester Co. NY eBird analysis"
 author: "Matthew E. Aiello-Lammens"
 date: "11/27/2020"
-output: html_document
+output:
+  word_document: default
+  html_document: default
 ---
 
 Setup the analysis and read in that data
@@ -242,6 +244,7 @@ Make some linear regression models
 ```{r}
 summary(lm(data = preserve_sight_counts, log(richness) ~ log(size_acres)))
 summary(lm(data = preserve_sight_counts, log(richness) ~ trail_per_acre))
+summary(lm(data = preserve_sight_counts, log(n) ~ trail_per_acre))
 ```
 
 
