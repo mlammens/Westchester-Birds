@@ -30,10 +30,13 @@ ebd_US_NY_119_relSep_2020 <- read_delim("ebd_US-NY-119_relSep-2020/ebd_US-NY-119
 List the birds, by common name, based on most to least sitings
 
 ```{r}
-ebd_US_NY_119_relSep_2020 %>%
-  group_by(`COMMON NAME`) %>%
+bird_frequency <-
+  ebd_US_NY_119_relSep_2020 %>%
+  group_by(`SCIENTIFIC NAME`, `COMMON NAME`) %>%
   tally() %>% 
   arrange(desc(n))
+
+bird_frequency
 ```
 
 Let's limit our data to just the past 20 years
@@ -131,4 +134,125 @@ ggplot() +
   geom_point(data = ebd_recent, aes(x = LONGITUDE, y = LATITUDE), alpha = 0.05)
 ```
 
+Examine the spatial point distribution for the top 20 most common birds
+
+```{r}
+common_birds <- bird_frequency$`COMMON NAME`[1:20]
+
+# Filter data set by only the 20 most common birds
+ebd_recent_b <- filter(ebd_recent, `COMMON NAME` %in% common_birds)
+
+ggplot() +
+  geom_sf(data = wc_openspace_wgs84) +
+  geom_point(data = ebd_recent_b, aes(x = LONGITUDE, y = LATITUDE, color = `COMMON NAME`), alpha = 0.1) +
+  theme_bw()
+
+```
+
+
+Make a plot for each species
+
+```{r}
+common_bird_plots <- c()
+
+for(x in common_birds){
+  
+  ebd_recent_b <- filter(ebd_recent, `COMMON NAME` == x)
+  
+  common_bird_plots[[x]] <-
+    ggplot() +
+    geom_sf(data = wc_openspace_wgs84) +
+    geom_point(data = ebd_recent_b, aes(x = LONGITUDE, y = LATITUDE), alpha = 0.05)
+}
+
+common_bird_plots$`Blue Jay` +
+  ggtitle("Blue Jay")
+common_bird_plots$`Tufted Titmouse` +
+  ggtitle("Tufted Titmouse")
+```
+
+## Birds by focal preserve
+
+In our study, we collected vegetation and wildlife data from three Westchester preserves, and had additional data from one other preserve. 
+
+* Teatown Lake Reservation
+* Kitchawan County Park
+* Ward Pound Ridge County Park
+* Rockefeller State Park Preserve (additional data)
+
+```{r}
+preserves <- c("ROCKEFELLER STATE PARK PRESERVE", "TEATOWN RESERVATION", "WARD POUND RIDGE RESERVATION COUNTY PARK",
+               "HUDSON PINES FARM", "KITCHAWAN PRESERVE")
+
+ebd_recent_pres <- filter(ebd_recent, NAME %in% preserves)
+
+# Convert Hudson Pines to Rockefeller
+ebd_recent_pres$NAME[ which(ebd_recent_pres$NAME == "HUDSON PINES FARM") ] <- "ROCKEFELLER STATE PARK PRESERVE"
+
+# Make a data.frame with preserve size and trail length information
+preserve_info <- data.frame(
+  NAME = c("ROCKEFELLER STATE PARK PRESERVE", "TEATOWN RESERVATION", 
+           "WARD POUND RIDGE RESERVATION COUNTY PARK", "KITCHAWAN PRESERVE"),
+  size_acres = c(1771, 1000, 4315, 208),
+  trail_length = c(55, 15, 41.2, 5)
+)
+
+# Merge this informaiton with the ebd_recent_pres data.frame
+ebd_recent_pres <- left_join(ebd_recent_pres, preserve_info, by = "NAME")
+
+# Get observation and richness counts
+preserve_sight_counts <-
+  ebd_recent_pres %>%
+  group_by(NAME) %>%
+  summarise(size_acres = unique(size_acres),
+            trail_length = unique(trail_length),
+            n = length(`SCIENTIFIC NAME`),
+            richness = length(unique(`SCIENTIFIC NAME`))) %>% 
+  arrange(desc(n))
+
+# Calculate miles of trail per acre of land
+preserve_sight_counts$trail_per_acre = preserve_sight_counts$trail_length / preserve_sight_counts$size_acres
+
+
+```
+
+Make plots showing size / trail length relationships with counts
+
+```{r}
+ggplot(data = preserve_sight_counts, aes(x = size_acres, y = log(n))) +
+  geom_point() +
+  stat_smooth(method = "lm")
+
+ggplot(data = preserve_sight_counts, aes(x = size_acres, y = richness)) +
+  geom_point() +
+  stat_smooth(method = "lm")
+
+ggplot(data = preserve_sight_counts, aes(x = trail_per_acre, y = log(n))) +
+  geom_point() +
+  stat_smooth(method = "lm")
+
+ggplot(data = preserve_sight_counts, aes(x = trail_per_acre, y = richness)) +
+  geom_point() +
+  stat_smooth(method = "lm")
+```
+
+
+Make some linear regression models
+
+```{r}
+summary(lm(data = preserve_sight_counts, log(richness) ~ log(size_acres)))
+summary(lm(data = preserve_sight_counts, log(richness) ~ trail_per_acre))
+```
+
+
+## Scratch work
+
+```{r}
+foo = right_join(wc_openspace_wgs84, sight_counts)
+ggplot() +
+  geom_sf(data = foo, aes(fill = richness))
+ggplot() +
+  geom_sf(data = foo, aes(fill = log(n)))
+
+```
 
